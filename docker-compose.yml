@@ -1,0 +1,26 @@
+services:
+  reconciler:
+    build: .
+    image: waybill-reconciler:local
+    container_name: waybill-reconciler
+    ports:
+      - "8000:8000"
+    environment:
+      # A commit listed here has its waybill deltas silently dropped on the
+      # replica, reproducing the sample "one waybill missed" defect.
+      DROP_RULES: '{"3": ["WB1008"]}'
+      # Seed the sample waybill history on first boot (empty primary only).
+      AUTO_SEED: "1"
+      SECRET_KEY: local-dev-only
+    volumes:
+      - reconciler-data:/app/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3).status==200 else 1)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  reconciler-data:

@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% block title %}按提交核对 · 运单复制核对{% endblock %}
+{% block content %}
+
+<section class="panel">
+  <h2>选择核对点</h2>
+  <form method="get" action="{{ url_for('reconcile_view') }}" class="form form-row">
+    <label>主库提交号
+      <select name="commit">
+        {% for c in commits %}
+        <option value="{{ c.commit_no }}" {{ 'selected' if sel_commit|string == c.commit_no|string }}>
+          #{{ c.commit_no }} · {{ c.note or '无备注' }} · {{ c.change_count }} 条
+        </option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>运单号从
+      <input name="lo" value="{{ sel_lo }}" placeholder="WB1001">
+    </label>
+    <label>到
+      <input name="hi" value="{{ sel_hi }}" placeholder="WB1010">
+    </label>
+    <button type="submit" class="btn btn-primary">核对</button>
+  </form>
+  <p class="hint">
+    核对基准固定为所选提交：备库未追到该提交时显示「待同步」；追上后按两库在该提交的增量核对。
+  </p>
+</section>
+
+{% if error %}
+  <div class="flash flash-error">{{ error }}</div>
+{% endif %}
+
+{% if result %}
+  <section class="cards">
+    <div class="card">
+      <div class="card-label">核对提交</div>
+      <div class="card-value">#{{ result.commit_no }}</div>
+      <div class="card-sub">区间 {{ result.range_lo }} – {{ result.range_hi }}</div>
+    </div>
+    <div class="card">
+      <div class="card-label">备库已应用</div>
+      <div class="card-value">#{{ result.applied_commit }}</div>
+      <div class="card-sub">
+        {% if result.pending %}
+          <span class="pill pill-warn">未追到核对点</span>
+        {% else %}
+          <span class="pill pill-ok">已覆盖核对点</span>
+        {% endif %}
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-label">问题合计</div>
+      {% if result.pending %}
+        <div class="card-value">—</div>
+        <div class="card-sub">备库未追到核对点，暂不下结论</div>
+      {% else %}
+        <div class="card-value">{{ result.total_problems }}</div>
+        <div class="card-sub">少单 {{ result.missing|length }} · 多单 {{ result.extra|length }} · 状态不符 {{ result.status_mismatch|length }}</div>
+      {% endif %}
+    </div>
+  </section>
+
+  {% if result.pending %}
+    <section class="panel pending-panel">
+      <h2>待同步</h2>
+      <p>
+        备库当前只追到提交 <strong>#{{ result.applied_commit }}</strong>，尚未追到所选提交
+        <strong>#{{ result.commit_no }}</strong>。此刻无法判定少单是因为同步落后还是确实漏了。
+      </p>
+      <form method="post" action="{{ url_for('advance_and_check') }}" class="form form-row">
+        <input type="hidden" name="commit" value="{{ result.commit_no }}">
+        <input type="hidden" name="lo" value="{{ result.range_lo }}">
+        <input type="hidden" name="hi" value="{{ result.range_hi }}">
+        <button type="submit" class="btn btn-primary">推进备库到 #{{ result.commit_no }} 后核对</button>
+      </form>
+      <p class="hint">也可回到总览页分批推进，核对点保持不变。</p>
+    </section>
+  {% else %}
+    <section class="panel">
+      <h2>核对结果（截至提交 #{{ result.commit_no }}）</h2>
+      {% if result.total_problems == 0 %}
+        <p class="empty ok">两库在所选提交、所选区间内记录一致，无少单 / 多单 / 状态不符。</p>
+      {% else %}
+
+        {% set sections = [
+          ('少单：主库有、备库无', result.missing, ['waybill_no', 'primary_status', 'primary_consignee', 'replica_status'], 'miss'),
+          ('多单：备库有、主库无', result.extra, ['waybill_no', 'primary_status', 'replica_status', 'replica_consignee'], 'extra'),
+          ('状态不符', result.status_mismatch, ['waybill_no', 'primary_status', 'replica_status'], 'mismatch')
+        ] %}
+        {% for title, rows, cols, kind in sections %}
+          {% if rows %}
+          <h3 class="section-{{ kind }}">{{ title }} <span class="count">{{ rows|length }}</span></h3>
+          <table class="table">
+            <thead>
+              <tr>
+                {% for col in cols %}
+                  <th>{{ {
+                    'waybill_no':'运单号',
+                    'primary_status':'主库状态',
+                    'primary_consignee':'主库收货',
+                    'replica_status':'备库状态',
+                    'replica_consignee':'备库收货'
+                  }[col] }}</th>
+                {% endfor %}
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in rows %}
+              <tr>
+                {% for col in cols %}
+                  <td>{{ row[col] if row[col] is not none else '—' }}</td>
+                {% endfor %}
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          {% endif %}
+        {% endfor %}
+
+      {% endif %}
+    </section>
+  {% endif %}
+{% endif %}
+
+{% endblock %}

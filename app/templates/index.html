@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% block title %}总览与操作 · 运单复制核对{% endblock %}
+{% block content %}
+
+<section class="cards">
+  <div class="card">
+    <div class="card-label">主库最新提交</div>
+    <div class="card-value">#{{ head }}</div>
+    <div class="card-sub">{{ commits|length }} 笔提交</div>
+  </div>
+  <div class="card">
+    <div class="card-label">备库已应用</div>
+    <div class="card-value">#{{ position.applied_commit }}</div>
+    <div class="card-sub">
+      {% if position.applied_commit < head %}
+        <span class="pill pill-warn">落后 {{ head - position.applied_commit }} 批</span>
+      {% elif position.applied_commit == head %}
+        <span class="pill pill-ok">已追平</span>
+      {% else %}
+        <span class="pill pill-warn">领先主库</span>
+      {% endif %}
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-label">最近同步时间</div>
+    <div class="card-value small">{{ position.updated_at }}</div>
+    <div class="card-sub">当前表行数 主库 {{ live_counts.primary }} / 备库 {{ live_counts.replica }}</div>
+  </div>
+</section>
+
+<div class="grid">
+  <section class="panel">
+    <h2>写入主库</h2>
+    <p class="hint">每次写入生成一笔新提交，可照常进行；核对不会受影响。</p>
+    <form method="post" action="{{ url_for('add_commit') }}" class="form">
+      <label>运单号
+        <input name="waybill_no" list="waybill-catalog" placeholder="如 WB1013" required>
+        <datalist id="waybill-catalog">
+          {% for wb in catalog %}<option value="{{ wb }}">{% endfor %}
+        </datalist>
+      </label>
+      <label>状态
+        <input name="status" placeholder="如 运输中" required>
+      </label>
+      <label>收货信息
+        <input name="consignee" placeholder="如 上海-张先生">
+      </label>
+      <label>备注
+        <input name="note" placeholder="如 规则换版后新增">
+      </label>
+      <button type="submit" class="btn btn-primary">提交到主库</button>
+    </form>
+
+    <form method="post" action="{{ url_for('delete_commit') }}" class="form form-inline">
+      <label>删除运单
+        <input name="waybill_no" list="waybill-catalog" placeholder="运单号" required>
+      </label>
+      <button type="submit" class="btn btn-danger">提交删除</button>
+    </form>
+    <div class="divider"></div>
+    <div class="actions">
+      <form method="post" action="{{ url_for('bulk_commit') }}">
+        <button class="btn">写入示例数据</button>
+      </form>
+      <form method="post" action="{{ url_for('reset_all') }}"
+            onsubmit="return confirm('将清空主库与备库，确定？')">
+        <button class="btn btn-danger">重置全部</button>
+      </form>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>推进备库</h2>
+    <p class="hint">备库按提交逐批应用主库增量，与主库写入互不影响。</p>
+    <form method="post" action="{{ url_for('advance_replica') }}" class="form">
+      <label>推进批数
+        <input name="steps" type="number" min="1" max="1000" value="1">
+      </label>
+      <input type="hidden" name="next" value="{{ url_for('index') }}">
+      <button type="submit" class="btn btn-primary">推进</button>
+    </form>
+    <form method="post" action="{{ url_for('reset_replica') }}" class="form"
+          onsubmit="return confirm('将清空备库并从第 1 批重来，确定？')">
+      <button type="submit" class="btn btn-ghost">重置备库</button>
+    </form>
+  </section>
+</div>
+
+<section class="panel">
+  <h2>提交历史</h2>
+  {% if commits %}
+  <table class="table">
+    <thead>
+      <tr><th>提交号</th><th>时间</th><th>变更数</th><th>备注</th><th>备库状态</th></tr>
+    </thead>
+    <tbody>
+      {% for c in commits %}
+      <tr>
+        <td>#{{ c.commit_no }}{% if c.is_head %} <span class="pill pill-head">HEAD</span>{% endif %}</td>
+        <td class="mono">{{ c.created_at }}</td>
+        <td>{{ c.change_count }}</td>
+        <td>{{ c.note }}</td>
+        <td>
+          {% if c.commit_no <= position.applied_commit %}
+            <span class="pill pill-ok">已应用</span>
+          {% else %}
+            <span class="pill pill-warn">待同步</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="empty">主库还没有提交。可点击「写入示例数据」生成样例历史。</p>
+  {% endif %}
+</section>
+
+{% endblock %}
